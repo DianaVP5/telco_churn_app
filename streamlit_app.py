@@ -10,12 +10,12 @@ from sklearn.ensemble import RandomForestClassifier
 # --------- Función auxiliar para buscar columnas por palabra clave ---------
 def find_col(df, keywords):
     """
-    Busca una columna que contenga alguna de las keywords en su nombre (ignorando mayúsculas/minúsculas y espacios).
-    Ej: keywords=["churn","abandono"] encontrará "Churn", "abandono_cliente", "Churn ".
+    Busca una columna que contenga alguna de las keywords en su nombre
+    (ignorando mayúsculas/minúsculas y espacios).
+    Ej: keywords=["churn","abandono"] encontrará "Churn", "abandono_cliente", etc.
     """
-    cols = list(df.columns)
-    for col in cols:
-        name = col.strip().lower()
+    for col in df.columns:
+        name = col.strip().lower().replace(" ", "")
         for kw in keywords:
             if kw in name:
                 return col
@@ -26,11 +26,8 @@ def find_col(df, keywords):
 
 @st.cache_resource
 def train_model():
-    # Cargar datos (usa el nombre exacto de tu CSV en el repo)
+    # Cargar datos (nombre exacto del CSV en el repo)
     df = pd.read_csv("Telco-Customer-Churn.csv")
-
-    # Si quieres ver las columnas reales, descomenta esta línea:
-    # st.write("Columnas del CSV:", list(df.columns))
 
     # ---------- Detectar nombres reales de columnas ----------
 
@@ -66,11 +63,11 @@ def train_model():
         lambda x: 1 if str(x).strip().lower() in ["yes", "si", "sí", "1", "true"] else 0
     )
 
-    # ---------- Construir lista de features según lo que exista ----------
+    # ---------- Construir listas de features ----------
 
     features = []
-    categoricas = []
     numericas = []
+    categoricas = []
 
     if col_contract is not None:
         features.append(col_contract)
@@ -97,6 +94,30 @@ def train_model():
         numericas.append(col_total)
         df[col_total] = pd.to_numeric(df[col_total], errors="coerce").fillna(0)
 
+    # ---------- Eliminar duplicados y solapes ----------
+
+    # Quitar None
+    features = [c for c in features if c is not None]
+    numericas = [c for c in numericas if c is not None]
+    categoricas = [c for c in categoricas if c is not None]
+
+    # Quitar duplicados manteniendo orden
+    def unique(seq):
+        seen = set()
+        res = []
+        for x in seq:
+            if x not in seen:
+                seen.add(x)
+                res.append(x)
+        return res
+
+    numericas = unique(numericas)
+    categoricas = unique(categoricas)
+    features = unique(features)
+
+    # Quitar columnas que estén en numéricas de categóricas (que no haya solape)
+    categoricas = [c for c in categoricas if c not in numericas]
+
     if len(features) == 0:
         raise ValueError(
             f"No se encontraron columnas de entrada válidas. Columnas del CSV: {list(df.columns)}"
@@ -107,11 +128,14 @@ def train_model():
 
     # ---------- Preprocesador ----------
 
+    transformers = []
+    if len(numericas) > 0:
+        transformers.append(("num", StandardScaler(), numericas))
+    if len(categoricas) > 0:
+        transformers.append(("cat", OneHotEncoder(drop="first"), categoricas))
+
     preprocessor = ColumnTransformer(
-        transformers=[
-            ("num", StandardScaler(), numericas) if len(numericas) > 0 else ("num", "passthrough", []),
-            ("cat", OneHotEncoder(drop="first"), categoricas) if len(categoricas) > 0 else ("cat", "passthrough", []),
-        ],
+        transformers=transformers,
         remainder="drop",
     )
 
