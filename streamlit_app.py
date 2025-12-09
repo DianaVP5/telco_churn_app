@@ -213,7 +213,21 @@ if colnames["total"] is not None:
 datos_cliente = pd.DataFrame([datos_dict])
 
 if st.button("Predecir abandono"):
-    prob = modelo.predict_proba(datos_cliente)[0][1]
+    # Obtener las probabilidades de cada clase
+    probs = modelo.predict_proba(datos_cliente)
+    classes = list(modelo.classes_)
+
+    # Manejo robusto: si existe la clase 1, usamos esa probabilidad
+    if 1 in classes:
+        idx = classes.index(1)
+        prob = float(probs[0][idx])
+    else:
+        # Si por alguna razón solo hay una clase, usamos esa
+        # y si esa clase NO es 1, interpretamos la prob de abandono como 0
+        if len(classes) == 1 and classes[0] == 1:
+            prob = float(probs[0][0])
+        else:
+            prob = 0.0
 
     st.subheader(f"Probabilidad de abandono: {prob:.2%}")
 
