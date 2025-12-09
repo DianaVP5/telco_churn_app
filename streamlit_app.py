@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 
-from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
@@ -14,25 +13,34 @@ def train_model():
     # Cargar datos (usa el nombre exacto de tu CSV en el repo)
     df = pd.read_csv("Telco-Customer-Churn.csv")
 
-    # Crear variable objetivo numérica
-    df["abandono_flag"] = df["Abandono"].apply(lambda x: 1 if x == "Si" else 0)
+    # Asegurar que TotalCharges sea numérico (en el dataset original viene como texto)
+    df["TotalCharges"] = pd.to_numeric(df["TotalCharges"], errors="coerce").fillna(0)
 
-    # Seleccionamos algunas variables para el modelo
+    # Crear variable objetivo numérica a partir de la columna 'Churn'
+    # (1 = Yes, 0 = No)
+    if "Churn" not in df.columns:
+        raise ValueError(f"No se encontró la columna 'Churn'. Columnas disponibles: {list(df.columns)}")
+
+    df["abandono_flag"] = df["Churn"].apply(
+        lambda x: 1 if str(x).strip().lower() in ["yes", "si", "1", "true"] else 0
+    )
+
+    # Seleccionamos algunas variables para el modelo (en INGLÉS, como en el CSV original)
     features = [
-        "Contrato",
-        "ServicioInternet",
-        "MetodoPago",
-        "Permanencia",
-        "CargosMensuales",
-        "CargosTotales",
+        "Contract",
+        "InternetService",
+        "PaymentMethod",
+        "tenure",
+        "MonthlyCharges",
+        "TotalCharges",
     ]
 
     X = df[features]
     y = df["abandono_flag"]
 
     # Definir columnas numéricas y categóricas
-    numericas = ["Permanencia", "CargosMensuales", "CargosTotales"]
-    categoricas = ["Contrato", "ServicioInternet", "MetodoPago"]
+    numericas = ["tenure", "MonthlyCharges", "TotalCharges"]
+    categoricas = ["Contract", "InternetService", "PaymentMethod"]
 
     preprocessor = ColumnTransformer(
         transformers=[
@@ -49,7 +57,7 @@ def train_model():
         steps=[("preprocessor", preprocessor), ("modelo", modelo)]
     )
 
-    # Entrenamos con TODOS los datos (solo para predicción)
+    # Entrenamos con TODOS los datos (solo para predicción en la app)
     pipe.fit(X, y)
 
     return pipe, features
@@ -64,7 +72,8 @@ st.write(
     "Ingrese los datos del cliente para estimar la probabilidad de abandono."
 )
 
-# Entradas del usuario
+# Entradas del usuario (labels en español, pero claves en inglés)
+
 Contrato = st.selectbox(
     "Tipo de contrato",
     ["Month-to-month", "One year", "Two year"],
@@ -93,16 +102,17 @@ CargosTotales = st.number_input(
     "Cargos totales", min_value=0.0, value=1000.0
 )
 
-# Construir el dataframe del cliente
+# Construir el dataframe del cliente usando LOS MISMOS NOMBRES
+# que en el CSV original (features en inglés)
 datos_cliente = pd.DataFrame(
     [
         {
-            "Contrato": Contrato,
-            "ServicioInternet": ServicioInternet,
-            "MetodoPago": MetodoPago,
-            "Permanencia": Permanencia,
-            "CargosMensuales": CargosMensuales,
-            "CargosTotales": CargosTotales,
+            "Contract": Contrato,
+            "InternetService": ServicioInternet,
+            "PaymentMethod": MetodoPago,
+            "tenure": Permanencia,
+            "MonthlyCharges": CargosMensuales,
+            "TotalCharges": CargosTotales,
         }
     ]
 )
