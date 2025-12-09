@@ -6,6 +6,22 @@ from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.ensemble import RandomForestClassifier
 
+
+# --------- Función auxiliar para buscar columnas por palabra clave ---------
+def find_col(df, keywords):
+    """
+    Busca una columna que contenga alguna de las keywords en su nombre (ignorando mayúsculas/minúsculas y espacios).
+    Ej: keywords=["churn","abandono"] encontrará "Churn", "abandono_cliente", "Churn ".
+    """
+    cols = list(df.columns)
+    for col in cols:
+        name = col.strip().lower()
+        for kw in keywords:
+            if kw in name:
+                return col
+    return None
+
+
 # ---------- 1. Entrenar el modelo al iniciar la app ----------
 
 @st.cache_resource
@@ -13,74 +29,41 @@ def train_model():
     # Cargar datos (usa el nombre exacto de tu CSV en el repo)
     df = pd.read_csv("Telco-Customer-Churn.csv")
 
-    # --- Mostrar columnas disponibles (útil para debug si algo falla) ---
+    # Si quieres ver las columnas reales, descomenta esta línea:
     # st.write("Columnas del CSV:", list(df.columns))
 
     # ---------- Detectar nombres reales de columnas ----------
 
-    # Columna objetivo: Churn / Abandono
-    if "Churn" in df.columns:
-        col_target = "Churn"
-    elif "Abandono" in df.columns:
-        col_target = "Abandono"
-    else:
+    # Columna objetivo: algo que contenga "churn" o "abandono"
+    col_target = find_col(df, ["churn", "abandono"])
+    if col_target is None:
         raise ValueError(
-            f"No se encontró la columna de abandono ('Churn' o 'Abandono'). "
+            f"No se encontró la columna de abandono (que contenga 'churn' o 'abandono'). "
             f"Columnas disponibles: {list(df.columns)}"
         )
 
-    # Contrato: Contract / Contrato
-    if "Contract" in df.columns:
-        col_contract = "Contract"
-    elif "Contrato" in df.columns:
-        col_contract = "Contrato"
-    else:
-        col_contract = None
+    # Contrato
+    col_contract = find_col(df, ["contract", "contrato"])
 
-    # Servicio de Internet: InternetService / ServicioInternet
-    if "InternetService" in df.columns:
-        col_internet = "InternetService"
-    elif "ServicioInternet" in df.columns:
-        col_internet = "ServicioInternet"
-    else:
-        col_internet = None
+    # Servicio de Internet
+    col_internet = find_col(df, ["internetservice", "serviciointernet", "internet"])
 
-    # Método de pago: PaymentMethod / MetodoPago
-    if "PaymentMethod" in df.columns:
-        col_payment = "PaymentMethod"
-    elif "MetodoPago" in df.columns:
-        col_payment = "MetodoPago"
-    else:
-        col_payment = None
+    # Método de pago
+    col_payment = find_col(df, ["paymentmethod", "metodopago", "pago"])
 
-    # Permanencia: tenure / Permanencia
-    if "tenure" in df.columns:
-        col_tenure = "tenure"
-    elif "Permanencia" in df.columns:
-        col_tenure = "Permanencia"
-    else:
-        col_tenure = None
+    # Permanencia
+    col_tenure = find_col(df, ["tenure", "permanencia", "meses"])
 
-    # Cargos mensuales: MonthlyCharges / CargosMensuales
-    if "MonthlyCharges" in df.columns:
-        col_monthly = "MonthlyCharges"
-    elif "CargosMensuales" in df.columns:
-        col_monthly = "CargosMensuales"
-    else:
-        col_monthly = None
+    # Cargos mensuales
+    col_monthly = find_col(df, ["monthlycharges", "cargosmensuales", "mensual"])
 
-    # Cargos totales: TotalCharges / CargosTotales (puede no existir)
-    if "TotalCharges" in df.columns:
-        col_total = "TotalCharges"
-    elif "CargosTotales" in df.columns:
-        col_total = "CargosTotales"
-    else:
-        col_total = None  # la hacemos opcional
+    # Cargos totales (opcional)
+    col_total = find_col(df, ["totalcharges", "cargostotales", "total"])
 
     # ---------- Crear variable objetivo numérica ----------
 
     df["abandono_flag"] = df[col_target].apply(
-        lambda x: 1 if str(x).strip().lower() in ["yes", "si", "1", "true"] else 0
+        lambda x: 1 if str(x).strip().lower() in ["yes", "si", "sí", "1", "true"] else 0
     )
 
     # ---------- Construir lista de features según lo que exista ----------
@@ -112,7 +95,6 @@ def train_model():
     if col_total is not None:
         features.append(col_total)
         numericas.append(col_total)
-        # asegurar tipo numérico
         df[col_total] = pd.to_numeric(df[col_total], errors="coerce").fillna(0)
 
     if len(features) == 0:
@@ -127,8 +109,8 @@ def train_model():
 
     preprocessor = ColumnTransformer(
         transformers=[
-            ("num", StandardScaler(), numericas),
-            ("cat", OneHotEncoder(drop="first"), categoricas),
+            ("num", StandardScaler(), numericas) if len(numericas) > 0 else ("num", "passthrough", []),
+            ("cat", OneHotEncoder(drop="first"), categoricas) if len(categoricas) > 0 else ("cat", "passthrough", []),
         ],
         remainder="drop",
     )
@@ -154,12 +136,12 @@ def train_model():
         "total": col_total,
     }
 
+
 modelo, colnames = train_model()
 
 # ---------- 2. Interfaz de usuario ----------
 
 st.title("Predicción de Abandono de Clientes - Telco")
-
 st.write("Ingrese los datos del cliente para estimar la probabilidad de abandono.")
 
 # Entradas del usuario (labels en español)
