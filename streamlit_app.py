@@ -12,7 +12,7 @@ from sklearn.ensemble import RandomForestClassifier
 @st.cache_resource
 def train_model():
     # Cargar datos (usa el nombre exacto de tu CSV en el repo)
-    df = pd.read_csv("Telco-Customer-Churn-ES.csv")
+    df = pd.read_csv("Telco-Customer-Churn.csv")
 
     # Crear variable objetivo numérica
     df["abandono_flag"] = df["Abandono"].apply(lambda x: 1 if x == "Si" else 0)
