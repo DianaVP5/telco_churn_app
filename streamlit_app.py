@@ -27,8 +27,7 @@ def find_col(df, keywords):
 @st.cache_resource
 def train_model():
     # Cargar datos (nombre exacto del CSV en el repo)
-    df = pd.read_csv("Telco-Customer-Churn.csv", sep=";")
-
+    df = pd.read_csv("Telco-Customer-Churn.csv")
 
     # ---------- Detectar nombres reales de columnas ----------
 
