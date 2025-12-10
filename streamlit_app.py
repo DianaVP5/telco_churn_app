@@ -10,128 +10,72 @@ from sklearn.ensemble import RandomForestClassifier
 # --------- Función auxiliar para buscar columnas por palabra clave ---------
 def find_col(df, keywords):
     """
-    Busca una columna que contenga alguna de las keywords en su nombre
-    (ignorando mayúsculas/minúsculas y espacios).
-    Ej: keywords=["churn","abandono"] encontrará "Churn", "abandono_cliente", etc.
+    Detecta columnas incluso si tienen espacios, BOM, mayúsculas o variaciones.
     """
     for col in df.columns:
-        name = col.strip().lower().replace(" ", "")
+        clean = col.strip().lower().replace(" ", "")
         for kw in keywords:
-            if kw in name:
+            if kw in clean:
                 return col
     return None
 
 
 # ---------- 1. Entrenar el modelo al iniciar la app ----------
-
 @st.cache_resource
 def train_model():
-    # Cargar datos (nombre exacto del CSV en el repo)
+    # Cargar datos
     df = pd.read_csv("Telco-Customer-Churn.csv")
 
-    # ---------- Detectar nombres reales de columnas ----------
+    # ---------- Limpiar nombres de columnas ----------
+    df.columns = df.columns.str.strip().str.replace("\ufeff", "", regex=True)
 
-    # Columna objetivo: algo que contenga "churn" o "abandono"
+    # Mostrar columnas detectadas
+    st.write("Columnas del CSV:", list(df.columns))
+
+    # ---------- Detectar nombres reales de columnas ----------
     col_target = find_col(df, ["churn", "abandono"])
     if col_target is None:
         raise ValueError(
-            f"No se encontró la columna de abandono (que contenga 'churn' o 'abandono'). "
-            f"Columnas disponibles: {list(df.columns)}"
+            f"No se encontró la columna objetivo. Columnas: {list(df.columns)}"
         )
 
-    # Contrato
-    col_contract = find_col(df, ["contract", "contrato"])
+    st.write("Columna objetivo detectada:", col_target)
 
-    # Servicio de Internet
-    col_internet = find_col(df, ["internetservice", "serviciointernet", "internet"])
+    # Limpiar valores del target (Yes/No)
+    df[col_target] = df[col_target].astype(str).str.strip()
 
-    # Método de pago
-    col_payment = find_col(df, ["paymentmethod", "metodopago", "pago"])
-
-    # Permanencia
-    col_tenure = find_col(df, ["tenure", "permanencia", "meses"])
-
-    # Cargos mensuales
-    col_monthly = find_col(df, ["monthlycharges", "cargosmensuales", "mensual"])
-
-    # Cargos totales (opcional)
-    col_total = find_col(df, ["totalcharges", "cargostotales", "total"])
-
-    # ---------- Crear variable objetivo numérica ----------
-
+    # Mapeo robusto
     df["abandono_flag"] = df[col_target].apply(
         lambda x: 1 if str(x).strip().lower() in ["yes", "si", "sí", "1", "true"] else 0
     )
 
-    # ---------- Construir listas de features ----------
+    st.write("Conteo de clases target:", df["abandono_flag"].value_counts())
 
-    features = []
-    numericas = []
-    categoricas = []
+    # Detectar features
+    col_contract = find_col(df, ["contract"])
+    col_internet = find_col(df, ["internetservice"])
+    col_payment = find_col(df, ["paymentmethod"])
+    col_tenure = find_col(df, ["tenure"])
+    col_monthly = find_col(df, ["monthlycharges"])
+    col_total = find_col(df, ["totalcharges"])
 
-    if col_contract is not None:
-        features.append(col_contract)
-        categoricas.append(col_contract)
-
-    if col_internet is not None:
-        features.append(col_internet)
-        categoricas.append(col_internet)
-
-    if col_payment is not None:
-        features.append(col_payment)
-        categoricas.append(col_payment)
-
-    if col_tenure is not None:
-        features.append(col_tenure)
-        numericas.append(col_tenure)
-
-    if col_monthly is not None:
-        features.append(col_monthly)
-        numericas.append(col_monthly)
-
-    if col_total is not None:
-        features.append(col_total)
-        numericas.append(col_total)
+    # Convertir total charges a número
+    if col_total:
         df[col_total] = pd.to_numeric(df[col_total], errors="coerce").fillna(0)
 
-    # ---------- Eliminar duplicados y solapes ----------
-
-    # Quitar None
-    features = [c for c in features if c is not None]
-    numericas = [c for c in numericas if c is not None]
-    categoricas = [c for c in categoricas if c is not None]
-
-    # Quitar duplicados manteniendo orden
-    def unique(seq):
-        seen = set()
-        res = []
-        for x in seq:
-            if x not in seen:
-                seen.add(x)
-                res.append(x)
-        return res
-
-    numericas = unique(numericas)
-    categoricas = unique(categoricas)
-    features = unique(features)
-
-    # Quitar columnas que estén en numéricas de categóricas (que no haya solape)
-    categoricas = [c for c in categoricas if c not in numericas]
-
-    if len(features) == 0:
-        raise ValueError(
-            f"No se encontraron columnas de entrada válidas. Columnas del CSV: {list(df.columns)}"
-        )
+    # Features válidas
+    numericas = [c for c in [col_tenure, col_monthly, col_total] if c]
+    categoricas = [c for c in [col_contract, col_internet, col_payment] if c]
+    features = numericas + categoricas
 
     X = df[features]
     y = df["abandono_flag"]
 
-    # ---------- Preprocesador ----------
-
+    # ---------- Preprocesamiento ----------
     transformers = []
-    if len(numericas) > 0:
+    if numericas:
         transformers.append(("num", StandardScaler(), numericas))
-    if len(categoricas) > 0:
+    if categoricas:
         transformers.append(("cat", OneHotEncoder(drop="first"), categoricas))
 
     preprocessor = ColumnTransformer(
@@ -139,10 +83,7 @@ def train_model():
         remainder="drop",
     )
 
-    modelo = RandomForestClassifier(
-        n_estimators=200,
-        random_state=42
-    )
+    modelo = RandomForestClassifier(n_estimators=200, random_state=42)
 
     pipe = Pipeline(
         steps=[("preprocessor", preprocessor), ("modelo", modelo)]
@@ -150,7 +91,6 @@ def train_model():
 
     pipe.fit(X, y)
 
-    # Devolvemos también los nombres de columnas para construir el DF del cliente
     return pipe, {
         "contract": col_contract,
         "internet": col_internet,
@@ -163,12 +103,11 @@ def train_model():
 
 modelo, colnames = train_model()
 
-# ---------- 2. Interfaz de usuario ----------
 
+# ---------- 2. Interfaz ----------
 st.title("Predicción de Abandono de Clientes - Telco")
 st.write("Ingrese los datos del cliente para estimar la probabilidad de abandono.")
 
-# Entradas del usuario (labels en español)
 
 Contrato = st.selectbox(
     "Tipo de contrato",
@@ -194,43 +133,32 @@ Permanencia = st.slider("Permanencia (meses)", 0, 72, 12)
 CargosMensuales = st.number_input("Cargos mensuales", min_value=0.0, value=70.0)
 CargosTotales = st.number_input("Cargos totales", min_value=0.0, value=1000.0)
 
-# Construir el dataframe del cliente usando LOS NOMBRES REALES del CSV
+
+# Construir DF para predicción
 datos_dict = {}
 
-if colnames["contract"] is not None:
-    datos_dict[colnames["contract"]] = Contrato
-if colnames["internet"] is not None:
-    datos_dict[colnames["internet"]] = ServicioInternet
-if colnames["payment"] is not None:
-    datos_dict[colnames["payment"]] = MetodoPago
-if colnames["tenure"] is not None:
-    datos_dict[colnames["tenure"]] = Permanencia
-if colnames["monthly"] is not None:
-    datos_dict[colnames["monthly"]] = CargosMensuales
-if colnames["total"] is not None:
-    datos_dict[colnames["total"]] = CargosTotales
+if colnames["contract"]: datos_dict[colnames["contract"]] = Contrato
+if colnames["internet"]: datos_dict[colnames["internet"]] = ServicioInternet
+if colnames["payment"]: datos_dict[colnames["payment"]] = MetodoPago
+if colnames["tenure"]: datos_dict[colnames["tenure"]] = Permanencia
+if colnames["monthly"]: datos_dict[colnames["monthly"]] = CargosMensuales
+if colnames["total"]: datos_dict[colnames["total"]] = CargosTotales
 
 datos_cliente = pd.DataFrame([datos_dict])
 
+
+# ---------- PREDICCIÓN ----------
 if st.button("Predecir abandono"):
-    # Obtener las probabilidades de cada clase
     probs = modelo.predict_proba(datos_cliente)
     classes = list(modelo.classes_)
 
-    # Manejo robusto: si existe la clase 1, usamos esa probabilidad
     if 1 in classes:
-        idx = classes.index(1)
-        prob = float(probs[0][idx])
+        prob = float(probs[0][classes.index(1)])
     else:
-        # Si por alguna razón solo hay una clase, usamos esa
-        # y si esa clase NO es 1, interpretamos la prob de abandono como 0
-        if len(classes) == 1 and classes[0] == 1:
-            prob = float(probs[0][0])
-        else:
-            prob = 0.0
+        prob = 0.0
 
     st.subheader(f"Probabilidad de abandono: {prob:.2%}")
-   
+
     if prob >= 0.70:
         st.error("🔴 Riesgo ALTO de abandono")
         st.write("👉 Recomendación: ofrecer descuento relevante, migrar a contrato anual o contactar al cliente.")
