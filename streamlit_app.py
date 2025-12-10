@@ -230,9 +230,7 @@ if st.button("Predecir abandono"):
             prob = 0.0
 
     st.subheader(f"Probabilidad de abandono: {prob:.2%}")
-    # Barra visual del porcentaje
-st.progress(prob)
-
+   
     if prob >= 0.70:
         st.error("🔴 Riesgo ALTO de abandono")
         st.write("👉 Recomendación: ofrecer descuento relevante, migrar a contrato anual o contactar al cliente.")
